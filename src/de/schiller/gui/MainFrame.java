@@ -1,23 +1,24 @@
 package de.schiller.gui;
 
-import com.google.gson.JsonArray;
-import com.google.gson.JsonParser;
+import de.schiller.math.Smooth;
 import org.json.JSONArray;
 import org.json.JSONObject;
-
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.io.PrintWriter;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
-import java.nio.charset.StandardCharsets;
+import java.net.Socket;
 
 public class MainFrame extends JPanel implements MouseMotionListener, MouseListener, ActionListener, Runnable{
 
     private JFrame fenster;
 
-    private JPanel mapsFrame, beliveFrame, confidenceFrame, overviewFrame, controlFrame;
+    private JPanel mapsFrame, beliveFrame, confidenceFrame, overviewFrame, controlFrame, settingsFrame;
 
     private Image missionIMG, disasterIMG, humanIMG, droneIMG, logoIMG, logo2IMG;
 
@@ -25,7 +26,7 @@ public class MainFrame extends JPanel implements MouseMotionListener, MouseListe
 
     public JButton setB, resetB;
 
-    public JToggleButton markB;
+    public JToggleButton markB, atracktB, avoidB;
 
     //Simulation
     private volatile int health = 100;
@@ -38,9 +39,11 @@ public class MainFrame extends JPanel implements MouseMotionListener, MouseListe
     //Network
     private String ip;
     private Thread network;
-    private DatagramSocket socket;
+    private DatagramSocket socketUDP;
+    private Socket socketTCP;
     private InetAddress address;
-    private int port = 5500;
+    private int portUDP = 5500;
+    private int portTCP = 65432;
     private byte[] buf = new byte[65000];
 
     //GUI
@@ -48,6 +51,7 @@ public class MainFrame extends JPanel implements MouseMotionListener, MouseListe
     private boolean isDragged = false;
     private boolean isClicked = false;
     private boolean isMarked = false;
+    private boolean isAtrackt = true;
 
     public MainFrame(String ip) {
         fenster = new JFrame("Arcade swarm GUI - " + ip);
@@ -70,11 +74,20 @@ public class MainFrame extends JPanel implements MouseMotionListener, MouseListe
         //Start Network
         try {
             this.ip = ip;
-            socket = new DatagramSocket();
+            //UDP
+            socketUDP = new DatagramSocket();
             address = InetAddress.getByName(ip);
             byte[] tmp = new byte[1024];
-            DatagramPacket packet = new DatagramPacket(tmp, tmp.length, address, port);
-            socket.send(packet);
+            DatagramPacket packet = new DatagramPacket(tmp, tmp.length, address, portUDP);
+            socketUDP.send(packet);
+            System.out.println("UDP connected!");
+
+            //TCP
+            Thread.sleep(200);
+            socketTCP = new Socket(ip, portTCP);
+            System.out.println("TCP connected!");
+
+            //Thread
             network = new Thread(this);
             network.start();
         } catch (Exception x) {
@@ -115,6 +128,13 @@ public class MainFrame extends JPanel implements MouseMotionListener, MouseListe
         controlFrame.setLocation(270, 670);
         mapsFrame.add(controlFrame);
 
+        settingsFrame = new JPanel();
+        settingsFrame.setLayout(new GridLayout(1, 3));
+        settingsFrame.setBorder(BorderFactory.createTitledBorder("Einstellungen:"));
+        settingsFrame.setSize(new Dimension(270, 150));
+        settingsFrame.setLocation(1050, 670);
+        mapsFrame.add(settingsFrame);
+
         missionIMG = Toolkit.getDefaultToolkit().getImage("resources/disaster_scr.png");
         disasterIMG = Toolkit.getDefaultToolkit().getImage("resources/disaster.png");
         humanIMG = Toolkit.getDefaultToolkit().getImage("resources/human.png");
@@ -149,12 +169,23 @@ public class MainFrame extends JPanel implements MouseMotionListener, MouseListe
         markB.addActionListener(this);
         controlFrame.add(markB);
 
+        atracktB = new JToggleButton(new ImageIcon("resources/atrackt.png"));
+        atracktB.addActionListener(this);
+        atracktB.setSelected(true);
+        settingsFrame.add(atracktB);
+
+        avoidB = new JToggleButton(new ImageIcon("resources/avoid.png"));
+        avoidB.addActionListener(this);
+        settingsFrame.add(avoidB);
+
+
         resetB = new JButton("Auswahl löschen");
         resetB.addActionListener(this);
         resetB.setEnabled(false);
         controlFrame.add(resetB);
 
         setB = new JButton("Bereich anwenden");
+        setB.addActionListener(this);
         setB.setEnabled(false);
         controlFrame.add(setB);
         super.add(mapsFrame);
@@ -177,7 +208,7 @@ public class MainFrame extends JPanel implements MouseMotionListener, MouseListe
         while(true){
             try {
                 DatagramPacket packet = new DatagramPacket(buf, buf.length);
-                socket.receive(packet);
+                socketUDP.receive(packet);
                 JSONObject json = new JSONObject(new String(buf));
 
                 health = (int) (100 - json.getFloat("health"));
@@ -187,8 +218,6 @@ public class MainFrame extends JPanel implements MouseMotionListener, MouseListe
 
                 int known_drones = json.getInt("known_drones");
                 droneLabel.setText(((known_drones < 10) ? "0" : "") + known_drones);
-
-               // humanPos.setLocation(json.getInt("humans_x"), json.getInt("humans_y"));
 
                 JSONArray conf = json.getJSONArray("confidence_map");
                 JSONArray belf = json.getJSONArray("internal_map");
@@ -211,7 +240,7 @@ public class MainFrame extends JPanel implements MouseMotionListener, MouseListe
     public void initMarkerMap(){
         for(int x = 0; x < 40; x++){
             for(int y = 0; y < 40; y++){
-                markerMap[x][y] = 1;
+                markerMap[x][y] = isAtrackt ? 1 : 0;
             }
         }
     }
@@ -242,13 +271,13 @@ public class MainFrame extends JPanel implements MouseMotionListener, MouseListe
         for (int x = 0; x < 40; x++) {
             for (int y = 0; y < 40; y++) {
                 //Draw Confidence
-                if (confidenceMap[x][y] >= 0.955f) {
-                    g.setColor(getColor(confidenceMap[x][y]));
+                if (confidenceMap[y][x] >= 0.955f) {
+                    g.setColor(getColor(confidenceMap[y][x]));
                     g.fillRect(x * 15 + 710, y * 15 + 60, 15, 15);
                 }
                 //Draw belive
-                if (belifeMap[x][y] >= 0.7f) {
-                    g.setColor(new Color(belifeMap[x][y], 0, 0, 0.8f));
+                if (belifeMap[y][x] >= 0.7f) {
+                    g.setColor(new Color(1, 0, 0, 0.8f));
                     g.fillRect(x * 15 + 50, y * 15 + 60, 15, 15);
                 }
                 //Draw marker
@@ -293,8 +322,8 @@ public class MainFrame extends JPanel implements MouseMotionListener, MouseListe
                 for (int j = -1; j < 2; j++) {
                     if (!(50 + 15 * (tileX + i) >= 50 && 60 + 15 * (tileY + j) >= 60 && 50 + 15 * (tileX + i) < 650 && 60 + 15 * (tileY + j) < 660)) continue;
                     g.fillRect(50 + 15 * (tileX + i), 60 + 15 * (tileY + j), 15, 15);
-                    if(isDragged) markerMap[tileX + i][tileY + j] = 0;
-                    if(isClicked) markerMap[tileX + i][tileY + j] = 0;
+                    if(isDragged) markerMap[tileX + i][tileY + j] = isAtrackt ? 0 : 1;
+                    if(isClicked) markerMap[tileX + i][tileY + j] = isAtrackt ? 0 : 1;
                 }
             }
             isClicked = false;
@@ -334,6 +363,58 @@ public class MainFrame extends JPanel implements MouseMotionListener, MouseListe
             isMarked = markB.isSelected();
             resetB.setEnabled(markB.isSelected());
             setB.setEnabled(markB.isSelected());
+        }
+        if(e.getSource() == setB){
+            markerMap = Smooth.smooth(markerMap);
+
+            for(int i = 0; i < 40; i++){
+                for(int j = 0; j < 40; j++){
+                    System.out.print(markerMap[i][j] + " ");
+                }
+                System.out.println("");
+            }
+            try {
+                OutputStream output = socketTCP.getOutputStream();
+                PrintWriter writer = new PrintWriter(output, true);
+
+                JSONArray parrent = new JSONArray();
+                for(int i = 0; i < 40; i++){
+                    JSONArray child = new JSONArray();
+                    for(int j = 0; j < 40; j++){
+                        child.put(markerMap[j][i]);
+                    }
+                    parrent.put(child);
+                }
+                writer.println(parrent);
+                System.out.println("Send MarkerMap to Server!");
+                markB.setSelected(false);
+                resetB.setEnabled(false);
+                setB.setEnabled(false);
+                isMarked = false;
+                initMarkerMap();
+
+            } catch (Exception ioException) {
+                ioException.printStackTrace();
+            }
+        }
+        if(e.getSource() == atracktB){
+            if(atracktB.isSelected()){
+                avoidB.setSelected(false);
+                isAtrackt = true;
+                initMarkerMap();
+            }else{
+                atracktB.setSelected(true);
+            }
+        }
+        if(e.getSource() == avoidB){
+            if(avoidB.isSelected()){
+                atracktB.setSelected(false);
+                isAtrackt = false;
+                initMarkerMap();
+            }else{
+                avoidB.setSelected(true);
+            }
+
         }
     }
 

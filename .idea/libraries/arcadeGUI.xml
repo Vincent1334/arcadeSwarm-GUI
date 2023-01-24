@@ -1,0 +1,10 @@
+<component name="libraryTable">
+  <library name="arcadeGUI">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/gson-2.8.2.jar!/" />
+      <root url="jar://$PROJECT_DIR$/json-20220924.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>
