@@ -35,7 +35,6 @@ public class Smooth {
             for(int y = pos.y-area; y <= pos.y+area; y++){
                 if(x < 0 || y < 0 || x >= matrix.length || y >= matrix[0].length){
                     fail++;
-                    System.out.println(fail);
                     continue;
                 }
                 sum += matrix[x][y];

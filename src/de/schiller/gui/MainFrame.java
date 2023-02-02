@@ -165,7 +165,7 @@ public class MainFrame extends JPanel implements MouseMotionListener, MouseListe
         healthLabel.setSize(100, 100);
         overviewFrame.add(healthLabel);
 
-        markB = new JToggleButton("Bereich makieren");
+        markB = new JToggleButton("Bereich markieren");
         markB.addActionListener(this);
         controlFrame.add(markB);
 
@@ -330,8 +330,15 @@ public class MainFrame extends JPanel implements MouseMotionListener, MouseListe
         }else initMarkerMap();
     }
 
-
-
+    private String[] splitByNumber(String s, int size) {
+        if(s == null || size <= 0)
+            return null;
+        int chunks = s.length() / size + ((s.length() % size > 0) ? 1 : 0);
+        String[] arr = new String[chunks];
+        for(int i = 0, j = 0, l = s.length(); i < l; i += size, j++)
+            arr[j] = s.substring(i, Math.min(l, i + size));
+        return arr;
+    }
 
     @Override
     public void mouseDragged(MouseEvent e) {
@@ -365,14 +372,8 @@ public class MainFrame extends JPanel implements MouseMotionListener, MouseListe
             setB.setEnabled(markB.isSelected());
         }
         if(e.getSource() == setB){
-            markerMap = Smooth.smooth(markerMap);
+           markerMap = Smooth.smooth(markerMap);
 
-            for(int i = 0; i < 40; i++){
-                for(int j = 0; j < 40; j++){
-                    System.out.print(markerMap[i][j] + " ");
-                }
-                System.out.println("");
-            }
             try {
                 OutputStream output = socketTCP.getOutputStream();
                 PrintWriter writer = new PrintWriter(output, true);
@@ -385,6 +386,7 @@ public class MainFrame extends JPanel implements MouseMotionListener, MouseListe
                     }
                     parrent.put(child);
                 }
+                
                 writer.println(parrent);
                 System.out.println("Send MarkerMap to Server!");
                 markB.setSelected(false);
